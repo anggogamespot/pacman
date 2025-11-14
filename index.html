@@ -1,16 +1,721 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pac-Man Web Game</title>
-    <link rel="stylesheet" href="style.css">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pac-Man Mobile</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            touch-action: manipulation;
+        }
+        
+        body {
+            font-family: 'Arial', sans-serif;
+            background-color: #121212;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+            color: white;
+        }
+        
+        .game-container {
+            position: relative;
+            width: 100%;
+            max-width: 500px;
+            aspect-ratio: 1/1;
+        }
+        
+        #gameCanvas {
+            background-color: #000;
+            display: block;
+            width: 100%;
+            height: 100%;
+            border-radius: 8px;
+        }
+        
+        .score-board {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 500px;
+            padding: 10px 0;
+            font-size: 1.2rem;
+        }
+        
+        .controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            width: 150px;
+            height: 150px;
+        }
+        
+        .d-pad {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .d-pad-button {
+            position: absolute;
+            width: 50px;
+            height: 50px;
+            background-color: rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+            user-select: none;
+        }
+        
+        .up {
+            top: 0;
+            left: 50px;
+        }
+        
+        .down {
+            bottom: 0;
+            left: 50px;
+        }
+        
+        .left {
+            top: 50px;
+            left: 0;
+        }
+        
+        .right {
+            top: 50px;
+            right: 0;
+        }
+        
+        .center {
+            top: 50px;
+            left: 50px;
+            background-color: rgba(255, 255, 255, 0.2);
+        }
+        
+        .game-over, .game-won {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            display: none;
+        }
+        
+        button {
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: #FFCC00;
+            border: none;
+            border-radius: 5px;
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
 </head>
 <body>
-    <canvas id="gameCanvas" width="500" height="500"></canvas>
+    <div class="score-board">
+        <div class="score">Score: <span id="score">0</span></div>
+        <div class="lives">Lives: <span id="lives">3</span></div>
+    </div>
     
-    <div id="score">Skor: 0</div>
-    
-    <script src="game.js"></script>
-</body>
-</html>
+    <div class="game-container">
+        <canvas id="gameCanvas"></canvas>
+        
+        <div class="controls">
+            <div class="d-pad">
+                <div class="d-pad-button up" id="up">↑</div>
+                <div class="d-pad-button down" id="down">↓</div>
+                <div class="d-pad-button left" id="left">←</div>
+                <div class="d-pad-button right" id="right">→</div>
+                <div class="d-pad-button center"></div>
+            </div>
+        </div>
+        
+        <div class="game-over" id="gameOver">
+            <h2>Game Over</h2>
+            <p>Your score: <span id="finalScore">0</span></p>
+            <button id="restartButton">Play Again</button>
+        </div>
+        
+        <div class="game-won" id="gameWon">
+            <h2>You Win!</h2>
+            <p>Your score: <span id="winScore">0</span></p>
+            <button id="nextLevelButton">Next Level</button>
+        </div>
+    </div>
+
+    <script>
+        // Game constants and variables
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const livesElement = document.getElementById('lives');
+        const gameOverScreen = document.getElementById('gameOver');
+        const gameWonScreen = document.getElementById('gameWon');
+        const finalScoreElement = document.getElementById('finalScore');
+        const winScoreElement = document.getElementById('winScore');
+        const restartButton = document.getElementById('restartButton');
+        const nextLevelButton = document.getElementById('nextLevelButton');
+        
+        // Set canvas size based on container
+        function resizeCanvas() {
+            const container = document.querySelector('.game-container');
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+        }
+        
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+        
+        // Game variables
+        let score = 0;
+        let lives = 3;
+        let level = 1;
+        let pellets = [];
+        let powerPellets = [];
+        let walls = [];
+        let pacman = {
+            x: 0,
+            y: 0,
+            radius: 0,
+            speed: 2,
+            direction: 'right',
+            nextDirection: 'right',
+            mouthOpen: 0,
+            mouthSpeed: 0.2,
+            mouthMax: 0.7
+        };
+        
+        let ghosts = [];
+        
+        // Direction constants
+        const DIRECTIONS = {
+            UP: 'up',
+            DOWN: 'down',
+            LEFT: 'left',
+            RIGHT: 'right'
+        };
+        
+        // Initialize game
+        function initGame() {
+            score = 0;
+            lives = 3;
+            updateUI();
+            
+            // Calculate cell size based on canvas dimensions
+            const cellSize = Math.min(canvas.width, canvas.height) / 19;
+            pacman.radius = cellSize / 2;
+            
+            // Create maze layout (1 = wall, 0 = empty, 2 = pellet, 3 = power pellet)
+            const layout = [
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+                [1, 2, 1, 1, 1, 2, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 2, 1],
+                [1, 3, 1, 0, 1, 2, 1, 1, 2, 1, 2, 1, 1, 2, 1, 0, 1, 3, 1],
+                [1, 2, 1, 1, 1, 2, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 2, 1],
+                [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+                [1, 2, 1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 1, 1, 2, 1],
+                [1, 2, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 1],
+                [1, 1, 1, 1, 1, 2, 1, 1, 0, 1, 0, 1, 1, 2, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 1, 2, 1, 0, 0, 0, 0, 0, 1, 2, 1, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1, 2, 1, 0, 1, 1, 1, 0, 1, 2, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 0, 2, 0, 0, 1, 0, 1, 0, 0, 2, 0, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1, 2, 1, 0, 1, 1, 1, 0, 1, 2, 1, 1, 1, 1, 1],
+                [0, 0, 0, 0, 1, 2, 1, 0, 0, 0, 0, 0, 1, 2, 1, 0, 0, 0, 0],
+                [1, 1, 1, 1, 1, 2, 1, 0, 1, 1, 1, 0, 1, 2, 1, 1, 1, 1, 1],
+                [1, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+                [1, 2, 1, 1, 1, 2, 1, 1, 2, 1, 2, 1, 1, 2, 1, 1, 1, 2, 1],
+                [1, 3, 2, 2, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1, 2, 2, 3, 1],
+                [1, 1, 1, 2, 1, 2, 1, 2, 1, 1, 1, 2, 1, 2, 1, 2, 1, 1, 1],
+                [1, 2, 2, 2, 2, 2, 1, 2, 2, 1, 2, 2, 1, 2, 2, 2, 2, 2, 1],
+                [1, 2, 1, 1, 1, 1, 1, 1, 2, 1, 2, 1, 1, 1, 1, 1, 1, 2, 1],
+                [1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1],
+                [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+            ];
+            
+            // Clear previous arrays
+            walls = [];
+            pellets = [];
+            powerPellets = [];
+            
+            // Process layout
+            for (let y = 0; y < layout.length; y++) {
+                for (let x = 0; x < layout[y].length; x++) {
+                    const cellX = x * cellSize + cellSize / 2;
+                    const cellY = y * cellSize + cellSize / 2;
+                    
+                    if (layout[y][x] === 1) {
+                        walls.push({ x: cellX, y: cellY, width: cellSize, height: cellSize });
+                    } else if (layout[y][x] === 2) {
+                        pellets.push({ x: cellX, y: cellY, radius: cellSize / 6 });
+                    } else if (layout[y][x] === 3) {
+                        powerPellets.push({ x: cellX, y: cellY, radius: cellSize / 4 });
+                    }
+                }
+            }
+            
+            // Position Pac-Man
+            pacman.x = 9.5 * cellSize;
+            pacman.y = 16.5 * cellSize;
+            
+            // Create ghosts
+            ghosts = [
+                {
+                    x: 9.5 * cellSize,
+                    y: 8.5 * cellSize,
+                    radius: cellSize / 2,
+                    color: '#FF0000',
+                    speed: 1.5,
+                    direction: 'left',
+                    isScared: false
+                },
+                {
+                    x: 8.5 * cellSize,
+                    y: 9.5 * cellSize,
+                    radius: cellSize / 2,
+                    color: '#FFB8FF',
+                    speed: 1.7,
+                    direction: 'up',
+                    isScared: false
+                },
+                {
+                    x: 10.5 * cellSize,
+                    y: 9.5 * cellSize,
+                    radius: cellSize / 2,
+                    color: '#00FFFF',
+                    speed: 1.6,
+                    direction: 'up',
+                    isScared: false
+                },
+                {
+                    x: 9.5 * cellSize,
+                    y: 9.5 * cellSize,
+                    radius: cellSize / 2,
+                    color: '#FFB851',
+                    speed: 1.8,
+                    direction: 'down',
+                    isScared: false
+                }
+            ];
+            
+            // Hide game over/win screens
+            gameOverScreen.style.display = 'none';
+            gameWonScreen.style.display = 'none';
+        }
+        
+        // Update UI elements
+        function updateUI() {
+            scoreElement.textContent = score;
+            livesElement.textContent = lives;
+        }
+        
+        // Draw game elements
+        function draw() {
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw walls
+            ctx.fillStyle = '#2020AA';
+            walls.forEach(wall => {
+                ctx.fillRect(
+                    wall.x - wall.width / 2,
+                    wall.y - wall.height / 2,
+                    wall.width,
+                    wall.height
+                );
+            });
+            
+            // Draw pellets
+            ctx.fillStyle = '#F8F8A0';
+            pellets.forEach(pellet => {
+                ctx.beginPath();
+                ctx.arc(pellet.x, pellet.y, pellet.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw power pellets
+            ctx.fillStyle = '#FFFFFF';
+            powerPellets.forEach(pellet => {
+                ctx.beginPath();
+                ctx.arc(pellet.x, pellet.y, pellet.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            
+            // Draw Pac-Man
+            ctx.fillStyle = '#FFFF00';
+            ctx.beginPath();
+            
+            // Calculate mouth angle based on direction and mouthOpen value
+            let startAngle, endAngle;
+            
+            switch (pacman.direction) {
+                case DIRECTIONS.RIGHT:
+                    startAngle = (0.2 + pacman.mouthOpen) * Math.PI;
+                    endAngle = (1.8 - pacman.mouthOpen) * Math.PI;
+                    break;
+                case DIRECTIONS.DOWN:
+                    startAngle = (0.7 + pacman.mouthOpen) * Math.PI;
+                    endAngle = (2.3 - pacman.mouthOpen) * Math.PI;
+                    break;
+                case DIRECTIONS.LEFT:
+                    startAngle = (1.2 + pacman.mouthOpen) * Math.PI;
+                    endAngle = (2.8 - pacman.mouthOpen) * Math.PI;
+                    break;
+                case DIRECTIONS.UP:
+                    startAngle = (1.7 + pacman.mouthOpen) * Math.PI;
+                    endAngle = (3.3 - pacman.mouthOpen) * Math.PI;
+                    break;
+            }
+            
+            ctx.arc(pacman.x, pacman.y, pacman.radius, startAngle, endAngle);
+            ctx.lineTo(pacman.x, pacman.y);
+            ctx.fill();
+            
+            // Draw ghosts
+            ghosts.forEach(ghost => {
+                ctx.fillStyle = ghost.isScared ? '#2121FF' : ghost.color;
+                
+                // Ghost body
+                ctx.beginPath();
+                ctx.arc(ghost.x, ghost.y - ghost.radius * 0.2, ghost.radius * 0.8, Math.PI, 0, false);
+                ctx.lineTo(ghost.x + ghost.radius, ghost.y + ghost.radius * 0.6);
+                
+                // Ghost skirt
+                for (let i = 0; i < 3; i++) {
+                    ctx.lineTo(ghost.x + ghost.radius * (0.8 - i * 0.4), ghost.y + ghost.radius * 0.2);
+                    ctx.lineTo(ghost.x + ghost.radius * (0.6 - i * 0.4), ghost.y + ghost.radius * 0.6);
+                }
+                
+                ctx.lineTo(ghost.x - ghost.radius, ghost.y + ghost.radius * 0.6);
+                ctx.closePath();
+                ctx.fill();
+                
+                // Ghost eyes
+                ctx.fillStyle = '#FFFFFF';
+                ctx.beginPath();
+                ctx.arc(ghost.x - ghost.radius * 0.4, ghost.y - ghost.radius * 0.2, ghost.radius * 0.3, 0, Math.PI * 2);
+                ctx.arc(ghost.x + ghost.radius * 0.4, ghost.y - ghost.radius * 0.2, ghost.radius * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // Ghost pupils
+                ctx.fillStyle = '#000';
+                let pupilOffsetX = 0;
+                let pupilOffsetY = 0;
+                
+                if (!ghost.isScared) {
+                    switch (ghost.direction) {
+                        case DIRECTIONS.LEFT: pupilOffsetX = -0.1; break;
+                        case DIRECTIONS.RIGHT: pupilOffsetX = 0.1; break;
+                        case DIRECTIONS.UP: pupilOffsetY = -0.1; break;
+                        case DIRECTIONS.DOWN: pupilOffsetY = 0.1; break;
+                    }
+                }
+                
+                ctx.beginPath();
+                ctx.arc(
+                    ghost.x - ghost.radius * 0.4 + pupilOffsetX * ghost.radius,
+                    ghost.y - ghost.radius * 0.2 + pupilOffsetY * ghost.radius,
+                    ghost.radius * 0.15, 0, Math.PI * 2
+                );
+                ctx.arc(
+                    ghost.x + ghost.radius * 0.4 + pupilOffsetX * ghost.radius,
+                    ghost.y - ghost.radius * 0.2 + pupilOffsetY * ghost.radius,
+                    ghost.radius * 0.15, 0, Math.PI * 2
+                );
+                ctx.fill();
+            });
+        }
+        
+        // Update game state
+        function update() {
+            // Animate Pac-Man's mouth
+            pacman.mouthOpen += pacman.mouthSpeed;
+            if (pacman.mouthOpen > pacman.mouthMax || pacman.mouthOpen < 0) {
+                pacman.mouthSpeed *= -1;
+            }
+            
+            // Try to change direction if requested
+            tryChangeDirection();
+            
+            // Move Pac-Man
+            movePacman();
+            
+            // Check for pellet collection
+            checkPelletCollision();
+            
+            // Move ghosts
+            moveGhosts();
+            
+            // Check for ghost collisions
+            checkGhostCollisions();
+            
+            // Check win condition
+            if (pellets.length === 0 && powerPellets.length === 0) {
+                winGame();
+            }
+        }
+        
+        // Try to change Pac-Man's direction if requested
+        function tryChangeDirection() {
+            if (pacman.nextDirection !== pacman.direction) {
+                // Save current position
+                const originalX = pacman.x;
+                const originalY = pacman.y;
+                
+                // Temporarily move in the requested direction
+                switch (pacman.nextDirection) {
+                    case DIRECTIONS.LEFT: pacman.x -= 2; break;
+                    case DIRECTIONS.RIGHT: pacman.x += 2; break;
+                    case DIRECTIONS.UP: pacman.y -= 2; break;
+                    case DIRECTIONS.DOWN: pacman.y += 2; break;
+                }
+                
+                // Check if movement is valid
+                const willCollide = checkWallCollision(pacman.x, pacman.y, pacman.radius);
+                
+                // Revert position
+                pacman.x = originalX;
+                pacman.y = originalY;
+                
+                // If no collision, change direction
+                if (!willCollide) {
+                    pacman.direction = pacman.nextDirection;
+                }
+            }
+        }
+        
+        // Move Pac-Man
+        function movePacman() {
+            let newX = pacman.x;
+            let newY = pacman.y;
+            
+            switch (pacman.direction) {
+                case DIRECTIONS.LEFT: newX -= pacman.speed; break;
+                case DIRECTIONS.RIGHT: newX += pacman.speed; break;
+                case DIRECTIONS.UP: newY -= pacman.speed; break;
+                case DIRECTIONS.DOWN: newY += pacman.speed; break;
+            }
+            
+            // Check for wall collision
+            if (!checkWallCollision(newX, newY, pacman.radius)) {
+                pacman.x = newX;
+                pacman.y = newY;
+            }
+            
+            // Handle tunnel/wrap-around
+            if (pacman.x < -pacman.radius) {
+                pacman.x = canvas.width + pacman.radius;
+            } else if (pacman.x > canvas.width + pacman.radius) {
+                pacman.x = -pacman.radius;
+            }
+        }
+        
+        // Check if a point collides with any wall
+        function checkWallCollision(x, y, radius) {
+            for (const wall of walls) {
+                // Check if circle (x, y, radius) intersects with rectangle (wall)
+                const closestX = Math.max(wall.x - wall.width/2, Math.min(x, wall.x + wall.width/2));
+                const closestY = Math.max(wall.y - wall.height/2, Math.min(y, wall.y + wall.height/2));
+                
+                const distanceX = x - closestX;
+                const distanceY = y - closestY;
+                
+                if ((distanceX * distanceX + distanceY * distanceY) < (radius * radius)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        
+        // Check for pellet collection
+        function checkPelletCollision() {
+            // Check regular pellets
+            for (let i = pellets.length - 1; i >= 0; i--) {
+                const pellet = pellets[i];
+                const dx = pacman.x - pellet.x;
+                const dy = pacman.y - pellet.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < pacman.radius + pellet.radius) {
+                    pellets.splice(i, 1);
+                    score += 10;
+                    updateUI();
+                    playChompSound();
+                }
+            }
+            
+            // Check power pellets
+            for (let i = powerPellets.length - 1; i >= 0; i--) {
+                const pellet = powerPellets[i];
+                const dx = pacman.x - pellet.x;
+                const dy = pacman.y - pellet.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < pacman.radius + pellet.radius) {
+                    powerPellets.splice(i, 1);
+                    score += 50;
+                    updateUI();
+                    
+                    // Make ghosts scared
+                    ghosts.forEach(ghost => {
+                        ghost.isScared = true;
+                        ghost.speed *= 0.5;
+                    });
+                    
+                    // Reset ghosts after 10 seconds
+                    setTimeout(() => {
+                        ghosts.forEach(ghost => {
+                            ghost.isScared = false;
+                            ghost.speed *= 2;
+                        });
+                    }, 10000);
+                    
+                    playPowerPelletSound();
+                }
+            }
+        }
+        
+        // Move ghosts
+        function moveGhosts() {
+            ghosts.forEach(ghost => {
+                // Simple AI for ghost movement
+                const directions = [DIRECTIONS.LEFT, DIRECTIONS.RIGHT, DIRECTIONS.UP, DIRECTIONS.DOWN];
+                let possibleDirections = [];
+                
+                // Check which directions are valid (no walls)
+                for (const dir of directions) {
+                    let testX = ghost.x;
+                    let testY = ghost.y;
+                    
+                    switch (dir) {
+                        case DIRECTIONS.LEFT: testX -= ghost.speed; break;
+                        case DIRECTIONS.RIGHT: testX += ghost.speed; break;
+                        case DIRECTIONS.UP: testY -= ghost.speed; break;
+                        case DIRECTIONS.DOWN: testY += ghost.speed; break;
+                    }
+                    
+                    if (!checkWallCollision(testX, testY, ghost.radius)) {
+                        possibleDirections.push(dir);
+                    }
+                }
+                
+                // If there are possible directions, choose one
+                if (possibleDirections.length > 0) {
+                    // If scared, move randomly
+                    if (ghost.isScared) {
+                        ghost.direction = possibleDirections[Math.floor(Math.random() * possibleDirections.length)];
+                    } else {
+                        // Otherwise, try to chase Pac-Man
+                        const dx = pacman.x - ghost.x;
+                        const dy = pacman.y - ghost.y;
+                        
+                        // Prefer directions that move toward Pac-Man
+                        const preferredDirections = [];
+                        if (dx < 0) preferredDirections.push(DIRECTIONS.LEFT);
+                        if (dx > 0) preferredDirections.push(DIRECTIONS.RIGHT);
+                        if (dy < 0) preferredDirections.push(DIRECTIONS.UP);
+                        if (dy > 0) preferredDirections.push(DIRECTIONS.DOWN);
+                        
+                        // Find preferred directions that are possible
+                        const availablePreferred = preferredDirections.filter(dir => 
+                            possibleDirections.includes(dir)
+                        );
+                        
+                        if (availablePreferred.length > 0) {
+                            ghost.direction = availablePreferred[Math.floor(Math.random() * availablePreferred.length)];
+                        } else {
+                            ghost.direction = possibleDirections[Math.floor(Math.random() * possibleDirections.length)];
+                        }
+                    }
+                }
+                
+                // Move the ghost
+                switch (ghost.direction) {
+                    case DIRECTIONS.LEFT: ghost.x -= ghost.speed; break;
+                    case DIRECTIONS.RIGHT: ghost.x += ghost.speed; break;
+                    case DIRECTIONS.UP: ghost.y -= ghost.speed; break;
+                    case DIRECTIONS.DOWN: ghost.y += ghost.speed; break;
+                }
+                
+                // Handle tunnel/wrap-around for ghosts too
+                if (ghost.x < -ghost.radius) {
+                    ghost.x = canvas.width + ghost.radius;
+                } else if (ghost.x > canvas.width + ghost.radius) {
+                    ghost.x = -ghost.radius;
+                }
+            });
+        }
+        
+        // Check for collisions with ghosts
+        function checkGhostCollisions() {
+            for (const ghost of ghosts) {
+                const dx = pacman.x - ghost.x;
+                const dy = pacman.y - ghost.y;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance < pacman.radius + ghost.radius) {
+                    if (ghost.isScared) {
+                        // Pac-Man eats the ghost
+                        ghost.x = 9.5 * (Math.min(canvas.width, canvas.height) / 19);
+                        ghost.y = 8.5 * (Math.min(canvas.width, canvas.height) / 19);
+                        ghost.isScared = false;
+                        ghost.speed *= 2;
+                        score += 200;
+                        updateUI();
+                        playEatGhostSound();
+                    } else {
+                        // Ghost catches Pac-Man
+                        lives--;
+                        updateUI();
+                        
+                        if (lives <= 0) {
+                            gameOver();
+                        } else {
+                            // Reset Pac-Man position
+                            pacman.x = 9.5 * (Math.min(canvas.width, canvas.height) / 19);
+                            pacman.y = 16.5 * (Math.min(canvas.width, canvas.height) / 19);
+                            pacman.direction = 'right';
+                            pacman.nextDirection = 'right';
+                            
+                            // Reset ghosts
+                            ghosts.forEach(g => {
+                                g.x = 9.5 * (Math.min(canvas.width, canvas.height) / 19);
+                                g.y = 8.5 * (Math.min(canvas.width, canvas.height) / 19);
+                            });
+                            
+                            playDeathSound();
+                        }
+                    }
+                }
+            }
+        }
+        
+        // Game over
+        function gameOver() {
+            finalScoreElement.textContent = score;
+            gameOverScreen.style.display = 'block';
+        }
+        
+        // Win game
+        function winGame() {
+            winScoreElement.textContent = score;
+            gameWonScreen.style.display = 'block';
+        }
+        
+        // Sound effects (using simple oscillator for compatibility)
+        function playChompSound() {
+            // Simple chomp
